@@ -1,26 +1,62 @@
-name: Android CI
+name: Build launcher
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    branches: '*'
 
 jobs:
   build:
-
+    strategy:
+      matrix:
+        config:
+        - name: Release
+          lower: release
+          
+        - name: Debug
+          lower: debug
+          
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
-    - name: set up JDK 17
+
+    - name: Setup Java JDK
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
-        distribution: 'temurin'
+        java-version: 21
+        distribution: temurin
         cache: gradle
 
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+    - name: Fix gradle permissions
+      run: chmod +x ./gradlew
+
+    - name: Build project
+      run: |
+        ./gradlew app:assemble${{ matrix.config.name }}"
+
+    - name: Rename universal apk
+      id: rename_apk_universal
+      run: |
+        SHORT_SHA=${GITHUB_SHA::7}
+        APK_PATH=${{github.workspace}}/app/build/outputs/apk/${{ matrix.config.lower }}/app-universal-${{ matrix.config.lower }}.apk
+        OUT_PATH=${{github.workspace}}/geode-launcher-${{ matrix.config.lower }}-$SHORT_SHA.apk
+        mv $APK_PATH $OUT_PATH
+        echo "path=$OUT_PATH" >> $GITHUB_OUTPUT
+
+    - name: Rename apk
+      id: rename_apk
+      run: |
+        SHORT_SHA=${GITHUB_SHA::7}
+        APK_PATH=${{github.workspace}}/app/build/outputs/apk/${{ matrix.config.lower }}/app-armeabi-v7a-${{ matrix.config.lower }}.apk
+        OUT_PATH=${{github.workspace}}/geode-launcher-${{ matrix.config.lower }}-android32-$SHORT_SHA.apk
+        mv $APK_PATH $OUT_PATH
+        echo "path=$OUT_PATH" >> $GITHUB_OUTPUT
+
+    - name: Upload development build
+      uses: actions/upload-artifact@v4
+      with:
+        name: geode-launcher-${{ matrix.config.lower }}
+        path: |
+          ${{ steps.rename_apk_universal.outputs.path }}
+          ${{ steps.rename_apk.outputs.path }}
